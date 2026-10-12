@@ -1,0 +1,33 @@
+name: Extract YouTube subtitles (one-off)
+on:
+  push:
+    branches: ['tools/extract-subs-AH44i-iJnis']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  get-captions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install yt-dlp
+        run: python -m pip install -U yt-dlp
+      - name: List subtitles
+        run: yt-dlp --list-subs 'https://www.youtube.com/watch?v=AH44i-iJnis'
+        continue-on-error: true
+      - name: Extract subtitles
+        shell: bash
+        run: |
+          mkdir -p captions
+          yt-dlp --skip-download --write-subs --write-auto-subs --sub-langs 'ru,ru.*,en,en.*' --sub-format 'vtt' -o 'captions/%(id)s.%(ext)s' 'https://www.youtube.com/watch?v=AH44i-iJnis'
+          echo 'Downloaded files:'
+          find captions -maxdepth 1 -type f -printf '%f (%s bytes)\n'
+      - name: Upload subtitles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AH44i-iJnis-subtitles
+          path: captions/
+          if-no-files-found: warn
