@@ -10,33 +10,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
-      - name: Try public alternative caption APIs
+      - name: Query transcript endpoints
         run: |
           cat > /tmp/collect.py <<'PY'
-          import requests,concurrent.futures,os
-          vid="AH44i-iJnis"
-          os.makedirs("captions",exist_ok=True)
-          hosts={"inv":["inv.nadeko.net","invidious.nerdvpn.de","yt.chocolatemoo53.com","invidious.tiekoetter.com","invidious.f5.si"],"piped":["pipedapi.adminforge.de","api.piped.private.coffee","piped-api.privacy.com.de","pipedapi.owo.si","api.piped.yt","pipedapi.kavin.rocks"]}
-          def work(pair):
-           kind,host=pair
-           base="https://"+host
-           u=base+("/api/v1/captions/" if kind=="inv" else "/streams/")+vid
+          import requests,os,concurrent.futures,json
+          vid="AH44i-iJnis";os.makedirs("captions",exist_ok=True)
+          urls=[
+          "https://inv.nadeko.net/api/v1/transcripts/"+vid+"?lang=ru&autogen",
+          "https://inv.nadeko.net/api/v1/transcripts/"+vid+"?lang=ru",
+          "https://inv.nadeko.net/api/v1/transcripts/"+vid,
+          "https://inv.nadeko.net/api/v1/captions/"+vid+"?lang=ru",
+          "https://inv.nadeko.net/api/v1/captions/"+vid+"?label=Russian%20%28auto-generated%29",
+          "https://invidious.nerdvpn.de/api/v1/transcripts/"+vid+"?lang=ru&autogen",
+          "https://yt.chocolatemoo53.com/api/v1/transcripts/"+vid+"?lang=ru&autogen",
+          "https://www.youtube.com/api/timedtext?type=list&v="+vid,
+          "https://video.google.com/timedtext?type=list&v="+vid
+          ]
+          def work(iu):
+           i,url=iu
            try:
-            r=requests.get(u,timeout=9,headers={"User-Agent":"Mozilla/5.0"})
-            print("HEAD",host,r.status_code,len(r.content),repr(r.text[:100]),flush=True)
-            if not r.ok:return
-            tracks=r.json().get("captions" if kind=="inv" else "subtitles",[])
-            print("TRACKS",host,repr(tracks)[:700],flush=True)
-            for i,t in enumerate(tracks[:8]):
-             from urllib.parse import urljoin
-             url=urljoin(base,t.get("url",""))
-             if not t.get("url"):continue
-             sub=requests.get(url,timeout=9)
-             print("SUB",host,sub.status_code,len(sub.content),repr(sub.text[:30]),flush=True)
-             if sub.ok and len(sub.content)>200 and ("WEBVTT" in sub.text[:30] or "-->" in sub.text[:200]):
-              p=f"captions/{vid}.{kind}.{host}.{i}.vtt";open(p,"w").write(sub.text);print("SUCCESS",p,flush=True);break
-           except Exception as e:print("ERROR",host,str(e)[:120],flush=True)
-          with concurrent.futures.ThreadPoolExecutor(max_workers=11) as ex:list(ex.map(work,[(k,h) for k,hs in hosts.items() for h in hs]))
+            r=requests.get(url,timeout=13,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json,text/vtt,*/*"})
+            print("RESULT",i,r.status_code,len(r.content),r.url,repr(r.text[:800]),flush=True)
+            if r.ok and len(r.content)>1000 and any(x in r.text[:5000] for x in ["WEBVTT","transcript","tStartMs","-->", "segments"]):
+             p=f"captions/{vid}.attempt{i}.txt";open(p,"w").write(r.text)
+             print("SAVED",p,flush=True)
+           except Exception as e: print("ERROR",i,str(e)[:200],flush=True)
+          with concurrent.futures.ThreadPoolExecutor(max_workers=9) as e:list(e.map(work,enumerate(urls)))
           print("FILES",os.listdir("captions"),flush=True)
           PY
           python /tmp/collect.py
@@ -44,6 +43,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AH44i-iJnis-subtitles
+          name: AH44i-iJnis-transcripts
           path: captions/
           if-no-files-found: warn
